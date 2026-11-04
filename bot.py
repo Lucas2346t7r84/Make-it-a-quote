@@ -181,5 +181,5 @@ async def quote_slash(interaction: discord.Interaction, text: str, author: disco
     await interaction.followup.send(file=file)
 
 if __name__ == "__main__":
-    TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE"
+    TOKEN = os.getenv("DISCORD_TOKEN")
     bot.run(TOKEN)
