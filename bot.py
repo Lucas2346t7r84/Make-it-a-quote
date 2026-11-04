@@ -37,30 +37,58 @@ class QuoteBot(commands.Bot):
 
 bot = QuoteBot()
 
-def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
+class OriginalMessageView(discord.ui.View):
+    def __init__(self, jump_url: str):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(label="Go to Original Text", style=discord.ButtonStyle.link, url=jump_url))
+
+def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
     width = 900
     height = 500
     background_color = (15, 15, 15)
     text_color = (245, 245, 245)
-    meta_color = (170, 170, 170)
+    meta_color = (180, 180, 180)
 
-    # Load Linux-compatible system fonts (Render / Ubuntu default paths)
+    # Right-side safe bounding box boundaries
+    box_x_start = 420
+    box_width = 440
+    box_center_x = box_x_start + (box_width // 2)
+
+    # Dynamically select font size based on text length to ensure it always fits
+    text_len = len(text)
+    if text_len < 15:
+        font_size = 52
+        max_chars_per_line = 12
+    elif text_len < 40:
+        font_size = 40
+        max_chars_per_line = 16
+    elif text_len < 90:
+        font_size = 30
+        max_chars_per_line = 22
+    else:
+        font_size = 22
+        max_chars_per_line = 32
+
+    # Load Linux-compatible system fonts
+    font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_path_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    
     try:
-        font_quote = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
-        font_meta = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+        font_quote = ImageFont.truetype(font_path_bold, font_size)
+        font_user = ImageFont.truetype(font_path_bold, 22)
     except IOError:
         try:
-            font_quote = ImageFont.truetype("arialbd.ttf", 40)
-            font_meta = ImageFont.truetype("arial.ttf", 18)
+            font_quote = ImageFont.truetype("arialbd.ttf", font_size)
+            font_user = ImageFont.truetype("arialbd.ttf", 22)
         except IOError:
             font_quote = ImageFont.load_default()
-            font_meta = ImageFont.load_default()
+            font_user = ImageFont.load_default()
 
     # Create base image
     img = Image.new("RGB", (width, height), color=background_color)
     draw = ImageDraw.Draw(img)
 
-    # 1. Paste user avatar on the left with horizontal fade mask
+    # 1. Paste user avatar on the left with a smooth horizontal fade mask
     if avatar_bytes:
         try:
             avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
@@ -68,8 +96,8 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
             
             mask = Image.new("L", (height, height), 0)
             mask_draw = ImageDraw.Draw(mask)
-            fade_start = int(height * 0.45)
-            fade_end = int(height * 0.9)
+            fade_start = int(height * 0.40)
+            fade_end = int(height * 0.75)
             
             for x in range(height):
                 if x < fade_start:
@@ -85,15 +113,9 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
         except Exception as e:
             print(f"Error loading avatar: {e}")
 
-    # 2. Right side text layout parameters
-    right_start_x = 400
-    right_width = 460
-    center_x = right_start_x + (right_width // 2)
-
-    # Wrap quote text
+    # Wrap quote text cleanly
     lines = []
     if text:
-        max_chars_per_line = 18
         words = text.split(' ')
         current_line = ""
         for word in words:
@@ -107,14 +129,17 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
 
     formatted_lines = [f'"{lines[0]}'] + lines[1:-1] + [f'{lines[-1]}"'] if len(lines) > 1 else ([f'"{lines[0]}"'] if lines else [])
 
+    # Calculate vertical layout spacing
+    line_spacing = int(font_size * 1.25)
+    total_text_height = len(formatted_lines) * line_spacing
+    
     # Draw Centered Quote Lines
-    current_y = 50
-    line_spacing = 48
+    current_y = max(40, (380 - total_text_height) // 2)
     if formatted_lines:
         for line in formatted_lines:
             bbox = draw.textbbox((0, 0), line, font=font_quote)
             line_w = bbox[2] - bbox[0]
-            line_x = center_x - (line_w // 2)
+            line_x = box_center_x - (line_w // 2)
             draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
             current_y += line_spacing
 
@@ -125,26 +150,17 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
             if hasattr(media_img, "is_animated") and media_img.is_animated:
                 media_img.seek(0)
             media_img = media_img.convert("RGB")
-            media_img.thumbnail((260, 120))
-            media_x = center_x - (media_img.width // 2)
-            img.paste(media_img, (media_x, current_y + 10))
-            current_y += media_img.height + 15
+            media_img.thumbnail((240, 100))
+            media_x = box_center_x - (media_img.width // 2)
+            img.paste(media_img, (media_x, current_y + 5))
         except Exception as e:
             print(f"Error loading media: {e}")
 
-    # 3. Draw -Server Name and @username below (Clearly positioned near bottom)
-    current_y = max(current_y + 10, 385)
-    
-    server_text = f"- {server_name}"
-    bbox_s = draw.textbbox((0, 0), server_text, font=font_meta)
-    sx = center_x - ((bbox_s[2] - bbox_s[0]) // 2)
-    draw.text((sx, current_y), server_text, fill=meta_color, font=font_meta)
-    
-    current_y += 26
-    user_text = f"{username}"
-    bbox_u = draw.textbbox((0, 0), user_text, font=font_meta)
-    ux = center_x - ((bbox_u[2] - bbox_u[0]) // 2)
-    draw.text((ux, current_y), user_text, fill=meta_color, font=font_meta)
+    # 2. Draw larger @username near bottom center
+    username_y = 420
+    bbox_u = draw.textbbox((0, 0), username, font=font_user)
+    ux = box_center_x - ((bbox_u[2] - bbox_u[0]) // 2)
+    draw.text((ux, username_y), username, fill=meta_color, font=font_user)
 
     # Save to buffer
     buffer = io.BytesIO()
@@ -166,7 +182,6 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
         avatar_bytes = await message.author.display_avatar.with_format("png").read()
 
     clean_text = re.sub(r'https?://\S+', '', message.content).strip()
-    server_name = message.guild.name if message.guild else "Direct Message"
     username = f"@{message.author.name}"
 
     media_bytes = None
@@ -195,14 +210,14 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
 
     buffer = generate_quote_card(
         text=clean_text,
-        server_name=server_name,
         username=username,
         avatar_bytes=avatar_bytes,
         media_bytes=media_bytes
     )
 
     file = discord.File(fp=buffer, filename="quote.png")
-    await interaction.followup.send(file=file)
+    view = OriginalMessageView(jump_url=message.jump_url)
+    await interaction.followup.send(file=file, view=view)
 
 # Slash Command (/quote)
 @bot.tree.command(name="quote", description="Quote a specific text manually")
@@ -215,17 +230,16 @@ async def quote_slash(interaction: discord.Interaction, text: str, author: disco
     if target_user.display_avatar:
         avatar_bytes = await target_user.display_avatar.with_format("png").read()
 
-    server_name = interaction.guild.name if interaction.guild else "Direct Message"
     username = f"@{target_user.name}"
 
     buffer = generate_quote_card(
         text=text,
-        server_name=server_name,
         username=username,
         avatar_bytes=avatar_bytes
     )
 
     file = discord.File(fp=buffer, filename="quote.png")
+    # For manual slash command quotes without a source message link, we don't attach the link button
     await interaction.followup.send(file=file)
 
 if __name__ == "__main__":
