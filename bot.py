@@ -39,19 +39,19 @@ bot = QuoteBot()
 
 def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
     width = 900
-    height = 500  # Extra canvas space
+    height = 500
     background_color = (15, 15, 15)
     text_color = (245, 245, 245)
     meta_color = (170, 170, 170)
 
-    # Load bold and regular fonts (fallback to default if system font missing)
+    # Load Linux-compatible system fonts (Render / Ubuntu default paths)
     try:
-        font_quote = ImageFont.truetype("arialbd.ttf", 40) # Bold & Large
-        font_meta = ImageFont.truetype("arial.ttf", 20)
+        font_quote = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+        font_meta = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
     except IOError:
         try:
-            font_quote = ImageFont.truetype("Arial Bold.ttf", 40)
-            font_meta = ImageFont.truetype("Arial.ttf", 20)
+            font_quote = ImageFont.truetype("arialbd.ttf", 40)
+            font_meta = ImageFont.truetype("arial.ttf", 18)
         except IOError:
             font_quote = ImageFont.load_default()
             font_meta = ImageFont.load_default()
@@ -90,10 +90,10 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
     right_width = 460
     center_x = right_start_x + (right_width // 2)
 
-    # Wrap quote text to fit nicely
+    # Wrap quote text
     lines = []
     if text:
-        max_chars_per_line = 18  # Shorter line width because text is much larger
+        max_chars_per_line = 18
         words = text.split(' ')
         current_line = ""
         for word in words:
@@ -133,14 +133,14 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
             print(f"Error loading media: {e}")
 
     # 3. Draw -Server Name and @username below (Clearly positioned near bottom)
-    current_y = max(current_y + 10, 390)
+    current_y = max(current_y + 10, 385)
     
     server_text = f"- {server_name}"
     bbox_s = draw.textbbox((0, 0), server_text, font=font_meta)
     sx = center_x - ((bbox_s[2] - bbox_s[0]) // 2)
     draw.text((sx, current_y), server_text, fill=meta_color, font=font_meta)
     
-    current_y += 28
+    current_y += 26
     user_text = f"{username}"
     bbox_u = draw.textbbox((0, 0), user_text, font=font_meta)
     ux = center_x - ((bbox_u[2] - bbox_u[0]) // 2)
