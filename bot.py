@@ -108,35 +108,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         except Exception as e:
             print(f"Error loading avatar: {e}")
 
-    # Wrap text cleanly
-    lines = []
-    if text:
-        words = text.split(' ')
-        current_line = ""
-        for word in words:
-            if len(current_line + " " + word) <= max_chars_per_line:
-                current_line += (" " if current_line else "") + word
-            else:
-                lines.append(current_line)
-                current_line = word
-        if current_line:
-            lines.append(current_line)
-
-    formatted_lines = [f'"{lines[0]}'] + lines[1:-1] + [f'{lines[-1]}"'] if len(lines) > 1 else ([f'"{lines[0]}"'] if lines else [])
-
-    line_spacing = int(font_size * 1.25)
-    total_text_height = len(formatted_lines) * line_spacing
-    
-    current_y = max(30, (200 - total_text_height) // 2)
-    if formatted_lines:
-        for line in formatted_lines:
-            bbox = draw.textbbox((0, 0), line, font=font_quote)
-            line_w = bbox[2] - bbox[0]
-            line_x = box_center_x - (line_w // 2)
-            draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
-            current_y += line_spacing
-
-    # Handle Media (Make photos as big as possible that fit in their half)
+    # Handle Media (Maximize photo size and draw quotation marks on the sides)
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
@@ -144,15 +116,59 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
                 media_img.seek(0)
             media_img = media_img.convert("RGB")
             
-            # Maximize photo size to fit nicely in the right half (Width: 400, Height: 250)
-            media_img.thumbnail((400, 250))
+            # Maximize photo size to fit nicely in the right half
+            media_img.thumbnail((360, 240))
             media_x = box_center_x - (media_img.width // 2)
+            media_y = max(40, (380 - media_img.height) // 2)
             
-            # Position media below text if text exists, otherwise center it vertically in the box
-            media_y = (current_y + 15) if formatted_lines else max(40, (380 - media_img.height) // 2)
             img.paste(media_img, (media_x, media_y))
+
+            # Draw quotation marks on the left and right sides of the photo
+            quote_left = '"'
+            quote_right = '"'
+            
+            # Left quote mark placed just to the left of the photo
+            ql_bbox = draw.textbbox((0, 0), quote_left, font=font_quote)
+            ql_x = max(box_x_start + 10, media_x - (ql_bbox[2] - ql_bbox[0]) - 8)
+            ql_y = media_y + (media_img.height // 2) - ((ql_bbox[3] - ql_bbox[1]) // 2)
+            draw.text((ql_x, ql_y), quote_left, fill=text_color, font=font_quote)
+
+            # Right quote mark placed just to the right of the photo
+            qr_bbox = draw.textbbox((0, 0), quote_right, font=font_quote)
+            qr_x = min(box_x_start + box_width - 20, media_x + media_img.width + 8)
+            qr_y = media_y + (media_img.height // 2) - ((qr_bbox[3] - qr_bbox[1]) // 2)
+            draw.text((qr_x, qr_y), quote_right, fill=text_color, font=font_quote)
+
         except Exception as e:
             print(f"Error loading media: {e}")
+    else:
+        # Wrap and render text normally if no photo/media
+        lines = []
+        if text:
+            words = text.split(' ')
+            current_line = ""
+            for word in words:
+                if len(current_line + " " + word) <= max_chars_per_line:
+                    current_line += (" " if current_line else "") + word
+                else:
+                    lines.append(current_line)
+                    current_line = word
+            if current_line:
+                lines.append(current_line)
+
+        formatted_lines = [f'"{lines[0]}'] + lines[1:-1] + [f'{lines[-1]}"'] if len(lines) > 1 else ([f'"{lines[0]}"'] if lines else [])
+
+        line_spacing = int(font_size * 1.25)
+        total_text_height = len(formatted_lines) * line_spacing
+        
+        current_y = max(40, (380 - total_text_height) // 2)
+        if formatted_lines:
+            for line in formatted_lines:
+                bbox = draw.textbbox((0, 0), line, font=font_quote)
+                line_w = bbox[2] - bbox[0]
+                line_x = box_center_x - (line_w // 2)
+                draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
+                current_y += line_spacing
 
     # Draw @username near bottom center
     username_y = 420
@@ -184,10 +200,9 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # Handle server stickers safely as text with quotation marks
+        # Handle server stickers safely as text with quotation marks so they never blank out
         if message.stickers:
-            sticker = message.stickers[0]
-            clean_text = f'"[Sticker: {sticker.name}]"'
+            clean_text = '"[Sticker]"'
         else:
             # Check standard file attachments (Photos)
             if message.attachments:
@@ -196,7 +211,6 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
                     async with session.get(attachment.url) as resp:
                         if resp.status == 200:
                             media_bytes = await resp.read()
-                            clean_text = '"(photo)"'
 
             # Check embeds if no attachment photo found
             if not media_bytes and message.embeds:
@@ -206,7 +220,6 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
                         async with session.get(target_url) as resp:
                             if resp.status == 200:
                                 media_bytes = await resp.read()
-                                clean_text = '"(photo)"'
                                 break
 
             # Regular message text
