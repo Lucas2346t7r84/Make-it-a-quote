@@ -134,7 +134,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
             current_y += line_spacing
 
-    # Handle Media (Images, Stickers, GIFs) cleanly
+    # Handle Media (Images, Stickers, GIFs)
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
@@ -143,11 +143,16 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             media_img = media_img.convert("RGB")
             media_img.thumbnail((220, 180))
             media_x = box_center_x - (media_img.width // 2)
-            # If there's text above it, add a little space; otherwise center the media vertically
             media_y = (current_y + 10) if formatted_lines else max(40, (380 - media_img.height) // 2)
             img.paste(media_img, (media_x, media_y))
         except Exception as e:
-            print(f"Error loading media: {e}")
+            print(f"Error loading media, rendering fallback text: {e}")
+            # Fallback text if sticker image format couldn't be parsed by PIL
+            fallback_text = '"[Sticker]"'
+            bbox = draw.textbbox((0, 0), fallback_text, font=font_quote)
+            fw = bbox[2] - bbox[0]
+            fx = box_center_x - (fw // 2)
+            draw.text((fx, 180), fallback_text, fill=text_color, font=font_quote)
 
     username_y = 420
     bbox_u = draw.textbbox((0, 0), username, font=font_user)
@@ -178,16 +183,18 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # Priority 1: Check if the message is a sticker and grab its image URL
+        # Priority 1: Check stickers and force PNG format request
         if message.stickers:
             sticker = message.stickers[0]
-            # Standardize sticker url to ensure PNG format retrieval
-            sticker_url = str(sticker.url)
-            async with session.get(sticker_url) as resp:
-                if resp.status == 200:
-                    media_bytes = await resp.read()
+            sticker_url = f"{sticker.url}?size=512"
+            try:
+                async with session.get(sticker_url) as resp:
+                    if resp.status == 200:
+                        media_bytes = await resp.read()
+            except Exception as e:
+                print(f"Failed to fetch sticker: {e}")
 
-        # Priority 2: Check standard file attachments if no sticker
+        # Priority 2: Check standard file attachments
         if not media_bytes and message.attachments:
             attachment = message.attachments[0]
             if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.apng']):
@@ -205,7 +212,6 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
                             media_bytes = await resp.read()
                             break
 
-        # Only pull text if it's NOT just a raw custom emoji/sticker tag string and there's actual text content
         if message.content and not message.stickers:
             potential_text = re.sub(r'https?://\S+', '', message.content).strip()
             if not re.match(r'^<a?:\w+:\d+>$', potential_text):
