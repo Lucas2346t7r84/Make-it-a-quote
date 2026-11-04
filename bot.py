@@ -2,10 +2,28 @@ import io
 import os
 import re
 import aiohttp
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord import app_commands
 from discord.ext import commands
 from PIL import Image, ImageOps, ImageDraw, ImageFont
+
+# --- DUMMY WEB SERVER FOR RENDER WEB SERVICE ---
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+
+def run_web_server():
+    port = int(os.getenv("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    server.serve_forever()
+
+# Start the web server in a separate background thread
+threading.Thread(target=run_web_server, daemon=True).start()
+# -----------------------------------------------
 
 intents = discord.Intents.default()
 intents.message_content = True
