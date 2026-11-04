@@ -146,8 +146,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             media_y = (current_y + 10) if formatted_lines else max(40, (380 - media_img.height) // 2)
             img.paste(media_img, (media_x, media_y))
         except Exception as e:
-            print(f"Error loading media, rendering fallback text: {e}")
-            # Fallback text if sticker image format couldn't be parsed by PIL
+            print(f"Error loading media image, rendering fallback text: {e}")
             fallback_text = '"[Sticker]"'
             bbox = draw.textbbox((0, 0), fallback_text, font=font_quote)
             fw = bbox[2] - bbox[0]
@@ -183,16 +182,22 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # Priority 1: Check stickers and force PNG format request
+        # Priority 1: Check stickers and force explicit PNG format CDN endpoint
         if message.stickers:
             sticker = message.stickers[0]
-            sticker_url = f"{sticker.url}?size=512"
+            # Custom server stickers use Discord's CDN, we explicitly target the png asset endpoint
+            sticker_url = f"https://cdn.discordapp.com/stickers/{sticker.id}.png?size=512&passthrough=true"
             try:
                 async with session.get(sticker_url) as resp:
                     if resp.status == 200:
                         media_bytes = await resp.read()
+                    else:
+                        # Fallback to standard sticker url if custom cdn fails
+                        async with session.get(str(sticker.url)) as resp2:
+                            if resp2.status == 200:
+                                media_bytes = await resp2.read()
             except Exception as e:
-                print(f"Failed to fetch sticker: {e}")
+                print(f"Failed to fetch custom sticker: {e}")
 
         # Priority 2: Check standard file attachments
         if not media_bytes and message.attachments:
