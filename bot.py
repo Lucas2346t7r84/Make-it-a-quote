@@ -37,99 +37,112 @@ class QuoteBot(commands.Bot):
 
 bot = QuoteBot()
 
-def generate_quote_card(text: str, author_name: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
+def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
     width = 800
+    height = 450  # Fixed clean card height
     background_color = (15, 15, 15)
     text_color = (240, 240, 240)
-    author_color = (160, 160, 160)
+    meta_color = (160, 160, 160)
 
-    # 1. Load fonts (Larger font size for quote: 34)
+    # Load fonts
     try:
-        font_quote = ImageFont.truetype("arial.ttf", 34)
-        font_author = ImageFont.truetype("arial.ttf", 20)
+        font_quote = ImageFont.truetype("arial.ttf", 32)
+        font_meta = ImageFont.truetype("arial.ttf", 18)
     except IOError:
         font_quote = ImageFont.load_default()
-        font_author = ImageFont.load_default()
+        font_meta = ImageFont.load_default()
 
-    # 2. Wrap text and calculate lines (adjusted width for larger text)
+    # Create base image
+    img = Image.new("RGB", (width, height), color=background_color)
+    draw = ImageDraw.Draw(img)
+
+    # 1. Paste user avatar on the left with a smooth horizontal fade mask
+    if avatar_bytes:
+        try:
+            avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+            avatar_img = avatar_img.resize((height, height))
+            
+            # Create horizontal alpha gradient mask for smooth fade in the middle
+            mask = Image.new("L", (height, height), 0)
+            mask_draw = ImageDraw.Draw(mask)
+            fade_start = int(height * 0.4)
+            fade_end = int(height * 0.85)
+            
+            for x in range(height):
+                if x < fade_start:
+                    alpha = 255
+                elif x > fade_end:
+                    alpha = 0
+                else:
+                    alpha = int(255 * (1.0 - (x - fade_start) / (fade_end - fade_start)))
+                mask_draw.line([(x, 0), (x, height)], fill=alpha)
+                
+            avatar_img.putalpha(mask)
+            img.paste(avatar_img, (0, 0), avatar_img)
+        except Exception as e:
+            print(f"Error loading avatar: {e}")
+
+    # 2. Right side text layout parameters
+    right_start_x = 380
+    right_width = 390
+    center_x = right_start_x + (right_width // 2)
+
+    # Wrap quote text to fit the right side box
     lines = []
     if text:
-        max_line_length = 26  # Slightly shorter lines to accommodate larger text size
+        max_chars_per_line = 22  # Optimized for size 32 font
         words = text.split(' ')
         current_line = ""
-        
         for word in words:
-            if len(current_line + " " + word) <= max_line_length:
+            if len(current_line + " " + word) <= max_chars_per_line:
                 current_line += (" " if current_line else "") + word
             else:
                 lines.append(current_line)
                 current_line = word
         if current_line:
             lines.append(current_line)
-            
-    formatted_text = f'"{chr(10).join(lines)}"' if lines else ""
-    
-    # 3. Calculate dynamic height based on text and media
-    line_spacing = 44
-    text_block_height = (len(lines) * line_spacing + 40) if lines else 20
-    media_height = 220 if media_bytes else 0
-    calculated_height = max(400, text_block_height + media_height + 60)
 
-    # Create base image
-    img = Image.new("RGB", (width, calculated_height), color=background_color)
-    draw = ImageDraw.Draw(img)
+    formatted_lines = [f'"{lines[0]}'] + lines[1:-1] + [f'{lines[-1]}"'] if len(lines) > 1 else ([f'"{lines[0]}"'] if lines else [])
 
-    # 4. Paste NORMAL user avatar on the left (No inversion, just dark overlay for readability)
-    if avatar_bytes:
-        try:
-            avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGB")
-            avatar_img = avatar_img.resize((calculated_height, calculated_height))
-            img.paste(avatar_img, (0, 0))
-            
-            # Dark overlay mask to keep text legible over the avatar
-            overlay = Image.new("RGBA", (calculated_height, calculated_height), (15, 15, 15, 160))
-            img.paste(overlay, (0, 0), overlay)
-        except Exception as e:
-            print(f"Error loading avatar: {e}")
+    # Draw Centered Quote Lines
+    current_y = 50
+    line_spacing = 40
+    if formatted_lines:
+        for line in formatted_lines:
+            # Measure line width for precise centering
+            bbox = draw.textbbox((0, 0), line, font=font_quote)
+            line_w = bbox[2] - bbox[0]
+            line_x = center_x - (line_w // 2)
+            draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
+            current_y += line_spacing
 
-    # 5. Draw Text on the right side
-    start_x = 420
-    start_y = 40
-    current_y = start_y
-
-    if formatted_text:
-        # Draw text line by line with custom spacing
-        for line in lines:
-            draw.text((start_x, current_y), f'"{line}"' if line == lines[0] and line == lines[-1] else (f'"{line}' if line == lines[0] else (f'{line}"' if line == line[lines[-1]] else line)), fill=text_color, font=font_quote)
-            # Simpler alternative block rendering if multi-line quote marks are handled cleanly:
-        # Let's use standard multi-line draw safely:
-        current_y = start_y
-        draw.multiline_text((start_x, current_y), formatted_text, fill=text_color, font=font_quote, spacing=10)
-        current_y += (len(lines) * line_spacing) + 10
-
-    # Clean up multi-line handling replacement block above for perfect execution:
-    # (Re-assigning current_y accurately based on lines)
-    current_y = start_y
-    if formatted_text:
-        draw.multiline_text((start_x, current_y), formatted_text, fill=text_color, font=font_quote, spacing=10)
-        current_y += (len(lines) * line_spacing) + 20
-
-    # 6. Handle Media (Images, Stickers, GIFs)
+    # Handle Media (Images, Stickers, GIFs if present)
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
             if hasattr(media_img, "is_animated") and media_img.is_animated:
                 media_img.seek(0)
             media_img = media_img.convert("RGB")
-            media_img.thumbnail((340, 180))
-            img.paste(media_img, (start_x, current_y))
-            current_y += media_img.height + 15
+            media_img.thumbnail((260, 140))
+            media_x = center_x - (media_img.width // 2)
+            img.paste(media_img, (media_x, current_y + 10))
+            current_y += media_img.height + 20
         except Exception as e:
-            print(f"Error loading media attachment/sticker: {e}")
+            print(f"Error loading media: {e}")
 
-    # Draw Author Name
-    author_text = f"— {author_name}"
-    draw.text((start_x, current_y + 5), author_text, fill=author_color, font=font_author)
+    # 3. Draw -Server Name and @username below (Centered)
+    current_y = max(current_y + 15, 320)  # Ensure proper spacing near bottom
+    
+    server_text = f"- {server_name}"
+    bbox_s = draw.textbbox((0, 0), server_text, font=font_meta)
+    sx = center_x - ((bbox_s[2] - bbox_s[0]) // 2)
+    draw.text((sx, current_y), server_text, fill=meta_color, font=font_meta)
+    
+    current_y += 24
+    user_text = f"{username}"
+    bbox_u = draw.textbbox((0, 0), user_text, font=font_meta)
+    ux = center_x - ((bbox_u[2] - bbox_u[0]) // 2)
+    draw.text((ux, current_y), user_text, fill=meta_color, font=font_meta)
 
     # Save to buffer
     buffer = io.BytesIO()
@@ -151,6 +164,8 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
         avatar_bytes = await message.author.display_avatar.with_format("png").read()
 
     clean_text = re.sub(r'https?://\S+', '', message.content).strip()
+    server_name = message.guild.name if message.guild else "Direct Message"
+    username = f"@{message.author.name}"
 
     media_bytes = None
     async with aiohttp.ClientSession() as session:
@@ -178,7 +193,8 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
 
     buffer = generate_quote_card(
         text=clean_text,
-        author_name=message.author.display_name,
+        server_name=server_name,
+        username=username,
         avatar_bytes=avatar_bytes,
         media_bytes=media_bytes
     )
@@ -197,9 +213,13 @@ async def quote_slash(interaction: discord.Interaction, text: str, author: disco
     if target_user.display_avatar:
         avatar_bytes = await target_user.display_avatar.with_format("png").read()
 
+    server_name = interaction.guild.name if interaction.guild else "Direct Message"
+    username = f"@{target_user.name}"
+
     buffer = generate_quote_card(
         text=text,
-        author_name=target_user.display_name,
+        server_name=server_name,
+        username=username,
         avatar_bytes=avatar_bytes
     )
 
