@@ -49,12 +49,10 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
     text_color = (245, 245, 245)
     meta_color = (180, 180, 180)
 
-    # Right-side safe bounding box boundaries
     box_x_start = 420
     box_width = 440
     box_center_x = box_x_start + (box_width // 2)
 
-    # Dynamically select font size based on text length
     text_len = len(text)
     if text_len < 15:
         font_size = 52
@@ -69,7 +67,6 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         font_size = 22
         max_chars_per_line = 32
 
-    # Load Linux-compatible system fonts
     font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     
     try:
@@ -83,11 +80,9 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             font_quote = ImageFont.load_default()
             font_user = ImageFont.load_default()
 
-    # Create base image
     img = Image.new("RGB", (width, height), color=background_color)
     draw = ImageDraw.Draw(img)
 
-    # 1. Paste user avatar on the left with a smooth horizontal fade mask
     if avatar_bytes:
         try:
             avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
@@ -112,7 +107,6 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         except Exception as e:
             print(f"Error loading avatar: {e}")
 
-    # Wrap quote text cleanly
     lines = []
     if text:
         words = text.split(' ')
@@ -128,11 +122,9 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
 
     formatted_lines = [f'"{lines[0]}'] + lines[1:-1] + [f'{lines[-1]}"'] if len(lines) > 1 else ([f'"{lines[0]}"'] if lines else [])
 
-    # Calculate vertical layout spacing
     line_spacing = int(font_size * 1.25)
     total_text_height = len(formatted_lines) * line_spacing
     
-    # Draw Centered Quote Lines
     current_y = max(40, (380 - total_text_height) // 2)
     if formatted_lines:
         for line in formatted_lines:
@@ -142,7 +134,6 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
             current_y += line_spacing
 
-    # Handle Media (Images, Stickers, GIFs)
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
@@ -155,13 +146,11 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         except Exception as e:
             print(f"Error loading media: {e}")
 
-    # 2. Draw larger @username near bottom center
     username_y = 420
     bbox_u = draw.textbbox((0, 0), username, font=font_user)
     ux = box_center_x - ((bbox_u[2] - bbox_u[0]) // 2)
     draw.text((ux, username_y), username, fill=meta_color, font=font_user)
 
-    # Save to buffer
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     buffer.seek(0)
@@ -171,8 +160,10 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
 
-# Context Menu Command (Right-click -> Apps -> 67)
+# Context Menu Command allowing User Installs
 @bot.tree.context_menu(name="67")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
 async def quote_context(interaction: discord.Interaction, message: discord.Message):
     await interaction.response.defer()
 
@@ -218,8 +209,10 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     view = OriginalMessageView(jump_url=message.jump_url)
     await interaction.followup.send(file=file, view=view)
 
-# Slash Command (/quote)
+# Slash Command allowing User Installs
 @bot.tree.command(name="quote", description="Quote a specific text manually")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
 @app_commands.describe(text="The message to quote", author="Who said it (optional)")
 async def quote_slash(interaction: discord.Interaction, text: str, author: discord.User = None):
     await interaction.response.defer()
