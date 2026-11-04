@@ -38,35 +38,38 @@ class QuoteBot(commands.Bot):
 bot = QuoteBot()
 
 def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
-    width = 800
-    height = 450  # Fixed clean card height
+    width = 900
+    height = 500  # Extra canvas space
     background_color = (15, 15, 15)
-    text_color = (240, 240, 240)
-    meta_color = (160, 160, 160)
+    text_color = (245, 245, 245)
+    meta_color = (170, 170, 170)
 
-    # Load fonts
+    # Load bold and regular fonts (fallback to default if system font missing)
     try:
-        font_quote = ImageFont.truetype("arial.ttf", 32)
-        font_meta = ImageFont.truetype("arial.ttf", 18)
+        font_quote = ImageFont.truetype("arialbd.ttf", 40) # Bold & Large
+        font_meta = ImageFont.truetype("arial.ttf", 20)
     except IOError:
-        font_quote = ImageFont.load_default()
-        font_meta = ImageFont.load_default()
+        try:
+            font_quote = ImageFont.truetype("Arial Bold.ttf", 40)
+            font_meta = ImageFont.truetype("Arial.ttf", 20)
+        except IOError:
+            font_quote = ImageFont.load_default()
+            font_meta = ImageFont.load_default()
 
     # Create base image
     img = Image.new("RGB", (width, height), color=background_color)
     draw = ImageDraw.Draw(img)
 
-    # 1. Paste user avatar on the left with a smooth horizontal fade mask
+    # 1. Paste user avatar on the left with horizontal fade mask
     if avatar_bytes:
         try:
             avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
             avatar_img = avatar_img.resize((height, height))
             
-            # Create horizontal alpha gradient mask for smooth fade in the middle
             mask = Image.new("L", (height, height), 0)
             mask_draw = ImageDraw.Draw(mask)
-            fade_start = int(height * 0.4)
-            fade_end = int(height * 0.85)
+            fade_start = int(height * 0.45)
+            fade_end = int(height * 0.9)
             
             for x in range(height):
                 if x < fade_start:
@@ -83,14 +86,14 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
             print(f"Error loading avatar: {e}")
 
     # 2. Right side text layout parameters
-    right_start_x = 380
-    right_width = 390
+    right_start_x = 400
+    right_width = 460
     center_x = right_start_x + (right_width // 2)
 
-    # Wrap quote text to fit the right side box
+    # Wrap quote text to fit nicely
     lines = []
     if text:
-        max_chars_per_line = 22  # Optimized for size 32 font
+        max_chars_per_line = 18  # Shorter line width because text is much larger
         words = text.split(' ')
         current_line = ""
         for word in words:
@@ -106,39 +109,38 @@ def generate_quote_card(text: str, server_name: str, username: str, avatar_bytes
 
     # Draw Centered Quote Lines
     current_y = 50
-    line_spacing = 40
+    line_spacing = 48
     if formatted_lines:
         for line in formatted_lines:
-            # Measure line width for precise centering
             bbox = draw.textbbox((0, 0), line, font=font_quote)
             line_w = bbox[2] - bbox[0]
             line_x = center_x - (line_w // 2)
             draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
             current_y += line_spacing
 
-    # Handle Media (Images, Stickers, GIFs if present)
+    # Handle Media if present
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
             if hasattr(media_img, "is_animated") and media_img.is_animated:
                 media_img.seek(0)
             media_img = media_img.convert("RGB")
-            media_img.thumbnail((260, 140))
+            media_img.thumbnail((260, 120))
             media_x = center_x - (media_img.width // 2)
             img.paste(media_img, (media_x, current_y + 10))
-            current_y += media_img.height + 20
+            current_y += media_img.height + 15
         except Exception as e:
             print(f"Error loading media: {e}")
 
-    # 3. Draw -Server Name and @username below (Centered)
-    current_y = max(current_y + 15, 320)  # Ensure proper spacing near bottom
+    # 3. Draw -Server Name and @username below (Clearly positioned near bottom)
+    current_y = max(current_y + 10, 390)
     
     server_text = f"- {server_name}"
     bbox_s = draw.textbbox((0, 0), server_text, font=font_meta)
     sx = center_x - ((bbox_s[2] - bbox_s[0]) // 2)
     draw.text((sx, current_y), server_text, fill=meta_color, font=font_meta)
     
-    current_y += 24
+    current_y += 28
     user_text = f"{username}"
     bbox_u = draw.textbbox((0, 0), user_text, font=font_meta)
     ux = center_x - ((bbox_u[2] - bbox_u[0]) // 2)
