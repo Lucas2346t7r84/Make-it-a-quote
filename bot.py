@@ -141,17 +141,12 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             if hasattr(media_img, "is_animated") and media_img.is_animated:
                 media_img.seek(0)
             media_img = media_img.convert("RGB")
-            media_img.thumbnail((220, 180))
+            media_img.thumbnail((200, 160))
             media_x = box_center_x - (media_img.width // 2)
             media_y = (current_y + 10) if formatted_lines else max(40, (380 - media_img.height) // 2)
             img.paste(media_img, (media_x, media_y))
         except Exception as e:
-            print(f"Error loading media image, rendering fallback text: {e}")
-            fallback_text = '"[Sticker]"'
-            bbox = draw.textbbox((0, 0), fallback_text, font=font_quote)
-            fw = bbox[2] - bbox[0]
-            fx = box_center_x - (fw // 2)
-            draw.text((fx, 180), fallback_text, fill=text_color, font=font_quote)
+            print(f"Error loading media image: {e}")
 
     username_y = 420
     bbox_u = draw.textbbox((0, 0), username, font=font_user)
@@ -182,24 +177,18 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # Priority 1: Check stickers and force explicit PNG format CDN endpoint
+        # Check stickers and fetch their asset via Discord's CDN url
         if message.stickers:
             sticker = message.stickers[0]
-            # Custom server stickers use Discord's CDN, we explicitly target the png asset endpoint
-            sticker_url = f"https://cdn.discordapp.com/stickers/{sticker.id}.png?size=512&passthrough=true"
+            # Standard sticker url asset endpoint
             try:
-                async with session.get(sticker_url) as resp:
+                async with session.get(str(sticker.url)) as resp:
                     if resp.status == 200:
                         media_bytes = await resp.read()
-                    else:
-                        # Fallback to standard sticker url if custom cdn fails
-                        async with session.get(str(sticker.url)) as resp2:
-                            if resp2.status == 200:
-                                media_bytes = await resp2.read()
             except Exception as e:
-                print(f"Failed to fetch custom sticker: {e}")
+                print(f"Error fetching sticker url: {e}")
 
-        # Priority 2: Check standard file attachments
+        # Check standard file attachments
         if not media_bytes and message.attachments:
             attachment = message.attachments[0]
             if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.apng']):
@@ -207,7 +196,7 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
                     if resp.status == 200:
                         media_bytes = await resp.read()
 
-        # Priority 3: Check embeds
+        # Check embeds
         if not media_bytes and message.embeds:
             for embed in message.embeds:
                 target_url = embed.image.url or embed.thumbnail.url or (embed.video.url if embed.video else None)
