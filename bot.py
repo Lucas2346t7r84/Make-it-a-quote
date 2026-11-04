@@ -55,17 +55,17 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
 
     text_len = len(text)
     if text_len < 15:
-        font_size = 52
-        max_chars_per_line = 12
+        font_size = 46
+        max_chars_per_line = 14
     elif text_len < 40:
-        font_size = 40
-        max_chars_per_line = 16
+        font_size = 36
+        max_chars_per_line = 18
     elif text_len < 90:
-        font_size = 30
-        max_chars_per_line = 22
+        font_size = 26
+        max_chars_per_line = 24
     else:
-        font_size = 22
-        max_chars_per_line = 32
+        font_size = 20
+        max_chars_per_line = 34
 
     font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     
@@ -83,6 +83,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
     img = Image.new("RGB", (width, height), color=background_color)
     draw = ImageDraw.Draw(img)
 
+    # Paste user avatar on the left with horizontal fade mask
     if avatar_bytes:
         try:
             avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
@@ -107,6 +108,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         except Exception as e:
             print(f"Error loading avatar: {e}")
 
+    # Wrap text cleanly
     lines = []
     if text:
         words = text.split(' ')
@@ -125,7 +127,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
     line_spacing = int(font_size * 1.25)
     total_text_height = len(formatted_lines) * line_spacing
     
-    current_y = max(40, (380 - total_text_height) // 2)
+    current_y = max(30, (200 - total_text_height) // 2)
     if formatted_lines:
         for line in formatted_lines:
             bbox = draw.textbbox((0, 0), line, font=font_quote)
@@ -134,20 +136,25 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
             current_y += line_spacing
 
-    # Handle Media (Images, Stickers, GIFs)
+    # Handle Media (Make photos as big as possible that fit in their half)
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
             if hasattr(media_img, "is_animated") and media_img.is_animated:
                 media_img.seek(0)
             media_img = media_img.convert("RGB")
-            media_img.thumbnail((200, 160))
+            
+            # Maximize photo size to fit nicely in the right half (Width: 400, Height: 250)
+            media_img.thumbnail((400, 250))
             media_x = box_center_x - (media_img.width // 2)
-            media_y = (current_y + 10) if formatted_lines else max(40, (380 - media_img.height) // 2)
+            
+            # Position media below text if text exists, otherwise center it vertically in the box
+            media_y = (current_y + 15) if formatted_lines else max(40, (380 - media_img.height) // 2)
             img.paste(media_img, (media_x, media_y))
         except Exception as e:
-            print(f"Error loading media image: {e}")
+            print(f"Error loading media: {e}")
 
+    # Draw @username near bottom center
     username_y = 420
     bbox_u = draw.textbbox((0, 0), username, font=font_user)
     ux = box_center_x - ((bbox_u[2] - bbox_u[0]) // 2)
@@ -177,45 +184,36 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # Check stickers and explicitly force static PNG endpoint conversion for custom stickers
+        # Handle server stickers safely as text with quotation marks
         if message.stickers:
             sticker = message.stickers[0]
-            # Force PNG endpoint url so PIL can read it successfully regardless of format type
-            sticker_url = f"https://cdn.discordapp.com/stickers/{sticker.id}.png?size=512"
-            try:
-                async with session.get(sticker_url) as resp:
-                    if resp.status == 200:
-                        media_bytes = await resp.read()
-                    else:
-                        # Fallback to default url if cdn endpoint rejects
-                        async with session.get(str(sticker.url)) as resp2:
-                            if resp2.status == 200:
-                                media_bytes = await resp2.read()
-            except Exception as e:
-                print(f"Error fetching sticker: {e}")
-
-        # Check standard file attachments
-        if not media_bytes and message.attachments:
-            attachment = message.attachments[0]
-            if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.apng']):
-                async with session.get(attachment.url) as resp:
-                    if resp.status == 200:
-                        media_bytes = await resp.read()
-
-        # Check embeds
-        if not media_bytes and message.embeds:
-            for embed in message.embeds:
-                target_url = embed.image.url or embed.thumbnail.url or (embed.video.url if embed.video else None)
-                if target_url:
-                    async with session.get(target_url) as resp:
+            clean_text = f'"[Sticker: {sticker.name}]"'
+        else:
+            # Check standard file attachments (Photos)
+            if message.attachments:
+                attachment = message.attachments[0]
+                if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.apng']):
+                    async with session.get(attachment.url) as resp:
                         if resp.status == 200:
                             media_bytes = await resp.read()
-                            break
+                            clean_text = '"(photo)"'
 
-        if message.content and not message.stickers:
-            potential_text = re.sub(r'https?://\S+', '', message.content).strip()
-            if not re.match(r'^<a?:\w+:\d+>$', potential_text):
-                clean_text = potential_text
+            # Check embeds if no attachment photo found
+            if not media_bytes and message.embeds:
+                for embed in message.embeds:
+                    target_url = embed.image.url or embed.thumbnail.url or (embed.video.url if embed.video else None)
+                    if target_url:
+                        async with session.get(target_url) as resp:
+                            if resp.status == 200:
+                                media_bytes = await resp.read()
+                                clean_text = '"(photo)"'
+                                break
+
+            # Regular message text
+            if not media_bytes and message.content:
+                potential_text = re.sub(r'https?://\S+', '', message.content).strip()
+                if not re.match(r'^<a?:\w+:\d+>$', potential_text) and potential_text:
+                    clean_text = potential_text
 
     username = f"@{message.author.name}"
 
