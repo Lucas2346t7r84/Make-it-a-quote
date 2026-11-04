@@ -67,18 +67,22 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         font_size = 20
         max_chars_per_line = 34
 
+    # Using bold-italic / decorative font styles
+    font_path_bold_italic = "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"
     font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     
     try:
-        font_quote = ImageFont.truetype(font_path_bold, font_size)
-        font_user = ImageFont.truetype(font_path_bold, 22)
+        font_quote = ImageFont.truetype(font_path_bold_italic, font_size)
     except IOError:
         try:
-            font_quote = ImageFont.truetype("arialbd.ttf", font_size)
-            font_user = ImageFont.truetype("arialbd.ttf", 22)
+            font_quote = ImageFont.truetype(font_path_bold, font_size)
         except IOError:
             font_quote = ImageFont.load_default()
-            font_user = ImageFont.load_default()
+
+    try:
+        font_user = ImageFont.truetype(font_path_bold, 22)
+    except IOError:
+        font_user = ImageFont.load_default()
 
     img = Image.new("RGB", (width, height), color=background_color)
     draw = ImageDraw.Draw(img)
@@ -108,7 +112,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         except Exception as e:
             print(f"Error loading avatar: {e}")
 
-    # Handle Media (Maximize photo size and draw quotation marks on the sides)
+    # Handle Media (Photos)
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
@@ -116,24 +120,21 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
                 media_img.seek(0)
             media_img = media_img.convert("RGB")
             
-            # Maximize photo size to fit nicely in the right half
             media_img.thumbnail((360, 240))
             media_x = box_center_x - (media_img.width // 2)
             media_y = max(40, (380 - media_img.height) // 2)
             
             img.paste(media_img, (media_x, media_y))
 
-            # Draw quotation marks on the left and right sides of the photo
+            # Draw quotation marks on the sides of the photo
             quote_left = '"'
             quote_right = '"'
             
-            # Left quote mark placed just to the left of the photo
             ql_bbox = draw.textbbox((0, 0), quote_left, font=font_quote)
             ql_x = max(box_x_start + 10, media_x - (ql_bbox[2] - ql_bbox[0]) - 8)
             ql_y = media_y + (media_img.height // 2) - ((ql_bbox[3] - ql_bbox[1]) // 2)
             draw.text((ql_x, ql_y), quote_left, fill=text_color, font=font_quote)
 
-            # Right quote mark placed just to the right of the photo
             qr_bbox = draw.textbbox((0, 0), quote_right, font=font_quote)
             qr_x = min(box_x_start + box_width - 20, media_x + media_img.width + 8)
             qr_y = media_y + (media_img.height // 2) - ((qr_bbox[3] - qr_bbox[1]) // 2)
@@ -142,7 +143,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         except Exception as e:
             print(f"Error loading media: {e}")
     else:
-        # Wrap and render text normally if no photo/media
+        # Wrap and render text normally
         lines = []
         if text:
             words = text.split(' ')
@@ -200,9 +201,9 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # Handle server stickers safely as text with quotation marks so they never blank out
+        # If it's a sticker, leave text completely empty
         if message.stickers:
-            clean_text = '"[Sticker]"'
+            clean_text = ""
         else:
             # Check standard file attachments (Photos)
             if message.attachments:
