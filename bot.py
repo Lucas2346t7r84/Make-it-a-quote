@@ -177,16 +177,22 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # Check stickers and fetch their asset via Discord's CDN url
+        # Check stickers and explicitly force static PNG endpoint conversion for custom stickers
         if message.stickers:
             sticker = message.stickers[0]
-            # Standard sticker url asset endpoint
+            # Force PNG endpoint url so PIL can read it successfully regardless of format type
+            sticker_url = f"https://cdn.discordapp.com/stickers/{sticker.id}.png?size=512"
             try:
-                async with session.get(str(sticker.url)) as resp:
+                async with session.get(sticker_url) as resp:
                     if resp.status == 200:
                         media_bytes = await resp.read()
+                    else:
+                        # Fallback to default url if cdn endpoint rejects
+                        async with session.get(str(sticker.url)) as resp2:
+                            if resp2.status == 200:
+                                media_bytes = await resp2.read()
             except Exception as e:
-                print(f"Error fetching sticker url: {e}")
+                print(f"Error fetching sticker: {e}")
 
         # Check standard file attachments
         if not media_bytes and message.attachments:
