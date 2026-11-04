@@ -54,7 +54,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
     box_width = 440
     box_center_x = box_x_start + (box_width // 2)
 
-    # Dynamically select font size based on text length to ensure it always fits
+    # Dynamically select font size based on text length
     text_len = len(text)
     if text_len < 15:
         font_size = 52
@@ -71,7 +71,6 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
 
     # Load Linux-compatible system fonts
     font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    font_path_reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     
     try:
         font_quote = ImageFont.truetype(font_path_bold, font_size)
@@ -143,7 +142,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
             current_y += line_spacing
 
-    # Handle Media if present
+    # Handle Media (Images, Stickers, GIFs)
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
@@ -172,8 +171,8 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
 
-# Context Menu Command (Right-click -> Apps -> Make it a Quote)
-@bot.tree.context_menu(name="Make it a Quote")
+# Context Menu Command (Right-click -> Apps -> 67)
+@bot.tree.context_menu(name="67")
 async def quote_context(interaction: discord.Interaction, message: discord.Message):
     await interaction.response.defer()
 
@@ -239,7 +238,6 @@ async def quote_slash(interaction: discord.Interaction, text: str, author: disco
     )
 
     file = discord.File(fp=buffer, filename="quote.png")
-    # For manual slash command quotes without a source message link, we don't attach the link button
     await interaction.followup.send(file=file)
 
 if __name__ == "__main__":
