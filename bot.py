@@ -42,7 +42,7 @@ class OriginalMessageView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(discord.ui.Button(label="Go to Original Text", style=discord.ButtonStyle.link, url=jump_url))
 
-def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
+def generate_quote_card(text: str, username: str, server_name: str, avatar_bytes: bytes = None, media_bytes: bytes = None) -> io.BytesIO:
     width = 900
     height = 500
     background_color = (15, 15, 15)
@@ -55,24 +55,24 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
 
     text_len = len(text)
     if text_len < 15:
-        font_size = 46
-        max_chars_per_line = 14
+        font_size = 48
+        max_chars_per_line = 13
     elif text_len < 40:
-        font_size = 36
-        max_chars_per_line = 18
+        font_size = 38
+        max_chars_per_line = 16
     elif text_len < 90:
-        font_size = 26
-        max_chars_per_line = 24
+        font_size = 28
+        max_chars_per_line = 22
     else:
-        font_size = 20
-        max_chars_per_line = 34
+        font_size = 21
+        max_chars_per_line = 32
 
-    # Using bold-italic / decorative font styles
-    font_path_bold_italic = "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"
+    # Distinct fancy italic serif font for the quote text
+    font_path_quote = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf"
     font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     
     try:
-        font_quote = ImageFont.truetype(font_path_bold_italic, font_size)
+        font_quote = ImageFont.truetype(font_path_quote, font_size)
     except IOError:
         try:
             font_quote = ImageFont.truetype(font_path_bold, font_size)
@@ -80,8 +80,10 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             font_quote = ImageFont.load_default()
 
     try:
+        font_meta = ImageFont.truetype(font_path_bold, 18)
         font_user = ImageFont.truetype(font_path_bold, 22)
     except IOError:
+        font_meta = ImageFont.load_default()
         font_user = ImageFont.load_default()
 
     img = Image.new("RGB", (width, height), color=background_color)
@@ -112,7 +114,9 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         except Exception as e:
             print(f"Error loading avatar: {e}")
 
-    # Handle Media (Photos)
+    bottom_content_y = 350
+
+    # Handle Media (Photos) with quotes at the top
     if media_bytes:
         try:
             media_img = Image.open(io.BytesIO(media_bytes))
@@ -122,28 +126,29 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
             
             media_img.thumbnail((360, 240))
             media_x = box_center_x - (media_img.width // 2)
-            media_y = max(40, (380 - media_img.height) // 2)
+            media_y = max(55, (360 - media_img.height) // 2)
             
             img.paste(media_img, (media_x, media_y))
 
-            # Draw quotation marks on the sides of the photo
+            # Draw quotation marks at the TOP of the photo
             quote_left = '"'
             quote_right = '"'
             
             ql_bbox = draw.textbbox((0, 0), quote_left, font=font_quote)
             ql_x = max(box_x_start + 10, media_x - (ql_bbox[2] - ql_bbox[0]) - 8)
-            ql_y = media_y + (media_img.height // 2) - ((ql_bbox[3] - ql_bbox[1]) // 2)
+            ql_y = media_y - 10
             draw.text((ql_x, ql_y), quote_left, fill=text_color, font=font_quote)
 
             qr_bbox = draw.textbbox((0, 0), quote_right, font=font_quote)
             qr_x = min(box_x_start + box_width - 20, media_x + media_img.width + 8)
-            qr_y = media_y + (media_img.height // 2) - ((qr_bbox[3] - qr_bbox[1]) // 2)
+            qr_y = media_y - 10
             draw.text((qr_x, qr_y), quote_right, fill=text_color, font=font_quote)
 
+            bottom_content_y = media_y + media_img.height + 15
         except Exception as e:
             print(f"Error loading media: {e}")
     else:
-        # Wrap and render text normally
+        # Wrap and render text normally with the fancy font
         lines = []
         if text:
             words = text.split(' ')
@@ -162,7 +167,7 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
         line_spacing = int(font_size * 1.25)
         total_text_height = len(formatted_lines) * line_spacing
         
-        current_y = max(40, (380 - total_text_height) // 2)
+        current_y = max(35, (340 - total_text_height) // 2)
         if formatted_lines:
             for line in formatted_lines:
                 bbox = draw.textbbox((0, 0), line, font=font_quote)
@@ -170,6 +175,14 @@ def generate_quote_card(text: str, username: str, avatar_bytes: bytes = None, me
                 line_x = box_center_x - (line_w // 2)
                 draw.text((line_x, current_y), line, fill=text_color, font=font_quote)
                 current_y += line_spacing
+            bottom_content_y = current_y + 5
+
+    # Draw server name below quote/media and above username
+    server_text = f"-{server_name}"
+    bbox_s = draw.textbbox((0, 0), server_text, font=font_meta)
+    sx = box_center_x - ((bbox_s[2] - bbox_s[0]) // 2)
+    server_y = min(370, bottom_content_y)
+    draw.text((sx, server_y), server_text, fill=meta_color, font=font_meta)
 
     # Draw @username near bottom center
     username_y = 420
@@ -193,6 +206,8 @@ async def on_ready():
 async def quote_context(interaction: discord.Interaction, message: discord.Message):
     await interaction.response.defer()
 
+    server_name = message.guild.name if message.guild else "Discord"
+
     avatar_bytes = None
     if message.author.display_avatar:
         avatar_bytes = await message.author.display_avatar.with_format("png").read()
@@ -201,7 +216,6 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     clean_text = ""
 
     async with aiohttp.ClientSession() as session:
-        # If it's a sticker, leave text completely empty
         if message.stickers:
             clean_text = ""
         else:
@@ -234,6 +248,7 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
     buffer = generate_quote_card(
         text=clean_text,
         username=username,
+        server_name=server_name,
         avatar_bytes=avatar_bytes,
         media_bytes=media_bytes
     )
@@ -250,6 +265,7 @@ async def quote_context(interaction: discord.Interaction, message: discord.Messa
 async def quote_slash(interaction: discord.Interaction, text: str, author: discord.User = None):
     await interaction.response.defer()
 
+    server_name = interaction.guild.name if interaction.guild else "Discord"
     target_user = author or interaction.user
     avatar_bytes = None
     if target_user.display_avatar:
@@ -260,6 +276,7 @@ async def quote_slash(interaction: discord.Interaction, text: str, author: disco
     buffer = generate_quote_card(
         text=text,
         username=username,
+        server_name=server_name,
         avatar_bytes=avatar_bytes
     )
 
